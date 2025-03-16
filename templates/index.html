@@ -1,0 +1,525 @@
+﻿<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>股票分析</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f7fa;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+
+        h2 {
+            color: #34495e;
+            margin-top: 50px;
+        }
+
+        .table-container {
+            max-height: 800px;
+            overflow-y: auto;
+            margin-bottom: 40px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        th {
+            background-color: #3498db;
+            color: #fff;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #2980b9;
+            color: #fff;
+            transition: background-color 0.3s;
+        }
+
+            button:hover {
+                background-color: #1f6391;
+            }
+
+        #progress {
+            margin: 15px 0;
+            font-weight: bold;
+            color: #2980b9;
+        }
+
+        .filter-form {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .radio-label {
+            margin-right: 20px;
+        }
+
+        .company-link {
+            cursor: pointer;
+            color: #2980b9;
+            text-decoration: none;
+        }
+
+            .company-link:hover {
+                text-decoration: underline;
+            }
+
+        .chart-row {
+            display: none;
+        }
+
+            .chart-row td {
+                border: none;
+                padding: 15px;
+            }
+
+        canvas {
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .sort-buttons {
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 5px;
+        }
+
+        .sort-btn {
+            background: none;
+            border: none;
+            color: #ecf0f1;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 0 5px;
+            transition: color 0.3s;
+        }
+
+            .sort-btn:hover {
+                color: #bdc3c7;
+            }
+
+            .sort-btn.active {
+                color: #fff;
+                font-weight: bold;
+            }
+
+        .chart-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+            gap: 20px;
+            max-width: 100%;
+            overflow-x: auto;
+        }
+
+        .chart-half {
+            width: 850px;
+        }
+
+        .pr-chart, .price-chart {
+            width: 850px !important;
+            height: 400px !important;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>股票分析結果</h1>
+    <button id="fetchDataBtn">抓取最新資料</button>
+    <div id="progress"></div>
+
+    <div class="filter-form">
+        <form method="POST" action="/">
+            <label>選擇要顯示的日期（單選）：</label><br>
+            {% for date in recent_dates %}
+            <label class="radio-label">
+                <input type="radio" name="date" value="{{ date }}"
+                       {% if date == selected_date %}checked{% endif %}> {{ date }}
+            </label>
+            {% endfor %}
+            <br>
+            <button type="submit">篩選</button>
+        </form>
+    </div>
+
+    <h2>當日 PR 高於 90 且股價高於 60MA 的公司</h2>
+    <div class="table-container">
+        <table id="highPrTable">
+            <tr>
+                <th>日期</th>
+                <th>公司代號</th>
+                <th>公司名稱</th>
+                <th>
+                    股價 <span class="sort-buttons">
+                        <button class="sort-btn" data-column="3" data-order="asc">▲</button>
+                        <button class="sort-btn" data-column="3" data-order="desc">▼</button>
+                    </span>
+                </th>
+                <th>
+                    PR值 <span class="sort-buttons">
+                        <button class="sort-btn" data-column="4" data-order="asc">▲</button>
+                        <button class="sort-btn" data-column="4" data-order="desc">▼</button>
+                    </span>
+                </th>
+                <th>
+                    成交量(張) <span class="sort-buttons">
+                        <button class="sort-btn" data-column="5" data-order="asc">▲</button>
+                        <button class="sort-btn" data-column="5" data-order="desc">▼</button>
+                    </span>
+                </th>
+            </tr>
+            {% if high_pr %}
+            {% for row in high_pr %}
+            <tr>
+                <td>{{ row['日期'] }}</td>
+                <td><span class="company-link" data-code="{{ row['公司代號'] }}">{{ row['公司代號'] }}</span></td>
+                <td>{{ row['公司名稱'] }}</td>
+                <td>{{ row['股價'] }}</td>
+                <td>{{ row['PR值'] }}</td>
+                <td>{{ row['成交量(張)'] }}</td>
+            </tr>
+            <tr class="chart-row" data-code="{{ row['公司代號'] }}">
+                <td colspan="6">
+                    <div class="chart-container">
+                        <div class="chart-half">
+                            <canvas class="pr-chart"></canvas>
+                        </div>
+                        <div class="chart-half">
+                            <canvas class="price-chart"></canvas>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+            {% else %}
+            <tr><td colspan="6">尚無資料</td></tr>
+            {% endif %}
+        </table>
+    </div>
+
+    <h2>當日 PR 80 以上且 RS 連續上升 3 天的公司</h2>
+    <div class="table-container">
+        <table id="risingRsTable">
+            <tr>
+                <th>日期</th>
+                <th>公司代號</th>
+                <th>公司名稱</th>
+                <th>
+                    股價 <span class="sort-buttons">
+                        <button class="sort-btn" data-column="3" data-order="asc">▲</button>
+                        <button class="sort-btn" data-column="3" data-order="desc">▼</button>
+                    </span>
+                </th>
+                <th>
+                    PR值 <span class="sort-buttons">
+                        <button class="sort-btn" data-column="4" data-order="asc">▲</button>
+                        <button class="sort-btn" data-column="4" data-order="desc">▼</button>
+                    </span>
+                </th>
+            </tr>
+            {% if rising_rs %}
+            {% for row in rising_rs %}
+            <tr>
+                <td>{{ row['日期'] }}</td>
+                <td><span class="company-link" data-code="{{ row['公司代號'] }}">{{ row['公司代號'] }}</span></td>
+                <td>{{ row['公司名稱'] }}</td>
+                <td>{{ row['股價'] }}</td>
+                <td>{{ row['PR值'] }}</td>
+            </tr>
+            <tr class="chart-row" data-code="{{ row['公司代號'] }}">
+                <td colspan="5">
+                    <div class="chart-container">
+                        <div class="chart-half">
+                            <canvas class="pr-chart"></canvas>
+                        </div>
+                        <div class="chart-half">
+                            <canvas class="price-chart"></canvas>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+            {% else %}
+            <tr><td colspan="5">尚無資料</td></tr>
+            {% endif %}
+        </table>
+    </div>
+
+    <h2>當日創下 240 天新高價的公司</h2>
+    <div class="table-container">
+        <table id="high240Table">
+            <tr>
+                <th>日期</th>
+                <th>公司代號</th>
+                <th>公司名稱</th>
+                <th>
+                    股價 <span class="sort-buttons">
+                        <button class="sort-btn" data-column="3" data-order="asc">▲</button>
+                        <button class="sort-btn" data-column="3" data-order="desc">▼</button>
+                    </span>
+                </th>
+                <th>
+                    PR值 <span class="sort-buttons">
+                        <button class="sort-btn" data-column="4" data-order="asc">▲</button>
+                        <button class="sort-btn" data-column="4" data-order="desc">▼</button>
+                    </span>
+                </th>
+                <th>
+                    成交量(張) <span class="sort-buttons">
+                        <button class="sort-btn" data-column="5" data-order="asc">▲</button>
+                        <button class="sort-btn" data-column="5" data-order="desc">▼</button>
+                    </span>
+                </th>
+            </tr>
+            {% if high_240 %}
+            {% for row in high_240 %}
+            <tr>
+                <td>{{ row['日期'] }}</td>
+                <td><span class="company-link" data-code="{{ row['公司代號'] }}">{{ row['公司代號'] }}</span></td>
+                <td>{{ row['公司名稱'] }}</td>
+                <td>{{ row['股價'] }}</td>
+                <td>{{ row['PR值'] }}</td>
+                <td>{{ row['成交量(張)'] }}</td>
+            </tr>
+            <tr class="chart-row" data-code="{{ row['公司代號'] }}">
+                <td colspan="6">
+                    <div class="chart-container">
+                        <div class="chart-half">
+                            <canvas class="pr-chart"></canvas>
+                        </div>
+                        <div class="chart-half">
+                            <canvas class="price-chart"></canvas>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+            {% else %}
+            <tr><td colspan="6">尚無資料</td></tr>
+            {% endif %}
+        </table>
+    </div>
+
+    <script>
+        document.getElementById('fetchDataBtn').addEventListener('click', function () {
+            fetch('/fetch_data', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'started') {
+                        document.getElementById('progress').innerText = '開始抓取資料...';
+                        checkProgress();
+                    } else if (data.status === 'already up-to-date') {
+                        alert('資料已是最新的');
+                    } else {
+                        alert('抓取正在進行中，請稍候');
+                    }
+                })
+                .catch(error => {
+                    console.error('抓取資料失敗:', error);
+                    alert('抓取資料時發生錯誤');
+                });
+        });
+
+        function checkProgress() {
+            fetch('/progress')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('progress').innerText = `進度: ${data.progress}%`;
+                    if (data.progress < 100) {
+                        setTimeout(checkProgress, 1000);
+                    } else {
+                        document.getElementById('progress').innerText = '抓取完成，正在重新整理頁面...';
+                        setTimeout(() => location.reload(), 1000);
+                    }
+                })
+                .catch(error => {
+                    console.error('檢查進度失敗:', error);
+                });
+        }
+
+        function sortTable(tableId, columnIndex, order) {
+            const table = document.getElementById(tableId);
+            const tbody = table.querySelector('tbody') || table;
+            const rows = Array.from(tbody.querySelectorAll('tr:not(.chart-row)'));
+            const chartRows = Array.from(tbody.querySelectorAll('.chart-row'));
+
+            const pairedRows = rows.map((row, index) => ({
+                dataRow: row,
+                chartRow: chartRows[index] || null
+            }));
+
+            pairedRows.sort((a, b) => {
+                const aValue = a.dataRow.cells[columnIndex].innerText;
+                const bValue = b.dataRow.cells[columnIndex].innerText;
+                const aNum = parseFloat(aValue) || 0;
+                const bNum = parseFloat(bValue) || 0;
+                return order === 'asc' ? aNum - bNum : bNum - aNum;
+            });
+
+            while (tbody.firstChild) {
+                tbody.removeChild(tbody.firstChild);
+            }
+            pairedRows.forEach(pair => {
+                tbody.appendChild(pair.dataRow);
+                if (pair.chartRow) {
+                    tbody.appendChild(pair.chartRow);
+                }
+            });
+
+            const buttons = table.querySelectorAll(`.sort-btn[data-column="${columnIndex}"]`);
+            buttons.forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.getAttribute('data-order') === order) {
+                    btn.classList.add('active');
+                }
+            });
+        }
+
+        document.querySelectorAll('.sort-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const tableId = this.closest('table').id;
+                const columnIndex = parseInt(this.getAttribute('data-column'));
+                const order = this.getAttribute('data-order');
+                sortTable(tableId, columnIndex, order);
+            });
+        });
+
+        let activePrChart = null;
+        let activePriceChart = null;
+
+        const chartWidth = 850;
+        const chartHeight = 400;
+
+        document.querySelectorAll('.company-link').forEach(link => {
+            link.addEventListener('click', function () {
+                const code = this.getAttribute('data-code');
+                const chartRow = this.closest('tr').nextElementSibling;
+                const prCanvas = chartRow.querySelector('.pr-chart');
+                const priceCanvas = chartRow.querySelector('.price-chart');
+                const isVisible = chartRow.style.display === 'table-row';
+
+                document.querySelectorAll('.chart-row').forEach(row => {
+                    row.style.display = 'none';
+                });
+                if (activePrChart) {
+                    activePrChart.destroy();
+                    activePrChart = null;
+                }
+                if (activePriceChart) {
+                    activePriceChart.destroy();
+                    activePriceChart = null;
+                }
+
+                if (!isVisible) {
+                    fetch(`/get_chart_data/${code}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.error) {
+                                alert(data.error);
+                                return;
+                            }
+
+                            chartRow.style.display = 'table-row';
+                            prCanvas.width = chartWidth;
+                            prCanvas.height = chartHeight;
+                            priceCanvas.width = chartWidth;
+                            priceCanvas.height = chartHeight;
+
+                            const ctxPr = prCanvas.getContext('2d');
+                            const ctxPrice = priceCanvas.getContext('2d');
+
+                            activePrChart = new Chart(ctxPr, {
+                                type: 'line',
+                                data: {
+                                    labels: data.dates,
+                                    datasets: [
+                                        {
+                                            label: `${code} PR 值`,
+                                            data: data.pr_values,
+                                            borderColor: 'red',
+                                            yAxisID: 'y-right',
+                                            fill: false
+                                        },
+                                        {
+                                            label: '加權指數',
+                                            data: data.twii_values,
+                                            borderColor: 'green',
+                                            yAxisID: 'y-left',
+                                            fill: false
+                                        }
+                                    ]
+                                },
+                                options: {
+                                    responsive: false,
+                                    maintainAspectRatio: false,
+                                    scales: {
+                                        x: { title: { display: true, text: '日期' } },
+                                        'y-left': { position: 'left', title: { display: true, text: '加權指數' }, beginAtZero: false },
+                                        'y-right': { position: 'right', title: { display: true, text: 'PR 值' }, beginAtZero: false, max: 100, min: 0 }
+                                    }
+                                }
+                            });
+
+                            activePriceChart = new Chart(ctxPrice, {
+                                type: 'line',
+                                data: {
+                                    labels: data.dates,
+                                    datasets: [
+                                        {
+                                            label: `${code} 股價`,
+                                            data: data.stock_prices,
+                                            borderColor: 'blue',
+                                            fill: false
+                                        }
+                                    ]
+                                },
+                                options: {
+                                    responsive: false,
+                                    maintainAspectRatio: false,
+                                    scales: {
+                                        x: { title: { display: true, text: '日期' } },
+                                        y: { title: { display: true, text: '股價' }, beginAtZero: false }
+                                    }
+                                }
+                            });
+                        })
+                        .catch(error => {
+                            console.error('圖表資料載入失敗:', error);
+                            alert('無法載入圖表資料');
+                        });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
