@@ -216,4 +216,7 @@ def fetch_data():
     return '', 204
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # 本地測試用，Render 上不執行
+    import os
+    port = int(os.getenv("PORT", 5000))  # 默認 5000，若有 PORT 則使用
+    app.run(host='0.0.0.0', port=port, debug=True)
