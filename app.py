@@ -163,7 +163,7 @@ def index():
     high_240_df = filter_240_high_stocks(stock_df, rs_pr_df, selected_date, stock_names)
     
     conn.close()
-    return render_template('index.html', high_pr=high_pr_df, rising_rs=rising_rs=rising_rs_df, high_240=high_240_df, recent_dates=recent_dates, selected_date=selected_date)
+    return render_template('index.html', high_pr=high_pr_df, rising_rs=rising_rs_df, high_240=high_240_df, recent_dates=recent_dates, selected_date=selected_date)
 
 # 獲取圖表數據路由
 @app.route('/get_chart_data/<code>')
