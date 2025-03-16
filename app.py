@@ -191,14 +191,15 @@ def fetch_and_store_data(stock_codes, start_date, end_date):
         store_rs_pr_to_db(rs_df, pr_df)
 
 # 從資料庫讀取 RS 和 PR 資料
-def load_rs_pr_from_db():
-    df = pd.read_sql_query("SELECT * FROM rs_pr_data", conn)
+def load_rs_pr_from_db(conn):
+    df = pd.read_sql_query("SELECT * FROM rs_pr_data WHERE date >= date('now', '-60 days')", conn)
     df['date'] = pd.to_datetime(df['date'])
     return df
 
 # 從資料庫讀取原始資料
-def load_stock_data_from_db():
-    df = pd.read_sql_query("SELECT * FROM stock_data", conn)
+def load_stock_data_from_db(conn):
+    # 只載入最近 60 天數據
+    df = pd.read_sql_query("SELECT * FROM stock_data WHERE date >= date('now', '-60 days')", conn)
     df['date'] = pd.to_datetime(df['date'])
     return df
 
@@ -330,29 +331,21 @@ def get_chart_data(code):
 # 主頁路由（單選日期）
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    rs_pr_df = load_rs_pr_from_db()
-    stock_df = load_stock_data_from_db()
+    conn = sqlite3.connect('stock_data.db')
+    rs_pr_df = load_rs_pr_from_db(conn)
+    stock_df = load_stock_data_from_db(conn)
     stock_names = get_stock_name_mapping()
-    
-    if rs_pr_df.empty or stock_df.empty:
-        recent_dates = [(datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(5)]
-        return render_template('index.html', high_pr=[], rising_rs=[], high_240=[], recent_dates=recent_dates, selected_date=None)
-    
     end_date = get_last_date_in_db('rs_pr_data') or datetime.now().date()
     recent_dates = [(end_date - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(5)][::-1]
-    
     selected_date = request.form.get('date') if request.method == 'POST' else recent_dates[-1]
     
+    # 只計算當前選定日期的數據
     high_pr_df = filter_high_pr_stocks(rs_pr_df, stock_df, selected_date, stock_names)
     rising_rs_df = filter_rising_rs_stocks(rs_pr_df, high_pr_df, selected_date, stock_names)
     high_240_df = filter_240_high_stocks(stock_df, rs_pr_df, selected_date, stock_names)
     
-    return render_template('index.html',
-                           high_pr=high_pr_df.to_dict(orient='records'),
-                           rising_rs=rising_rs_df.to_dict(orient='records'),
-                           high_240=high_240_df.to_dict(orient='records'),
-                           recent_dates=recent_dates,
-                           selected_date=selected_date)
+    conn.close()
+    return render_template('index.html', high_pr=high_pr_df, rising_rs=rising_rs_df, high_240=high_240_df, recent_dates=recent_dates, selected_date=selected_date)
 
 # 抓取資料路由
 @app.route('/fetch_data', methods=['POST'])
